@@ -1,11 +1,6 @@
-
-
 import ast 
-
-
 CHUNK_SIZE = 40       
 CHUNK_OVERLAP = 5     
-
 
 def chunk_by_lines(file_path, content, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP):
     """
@@ -28,7 +23,6 @@ def chunk_by_lines(file_path, content, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVER
     lines = content.split("\n")
     chunks = []
     chunk_index = 0
-
    
     step = chunk_size - overlap
 
@@ -36,7 +30,6 @@ def chunk_by_lines(file_path, content, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVER
         end = min(start + chunk_size, len(lines))
         chunk_lines = lines[start:end]
 
-        
         non_empty = [l for l in chunk_lines if l.strip()]
         if len(non_empty) < 3:
             continue
@@ -51,12 +44,10 @@ def chunk_by_lines(file_path, content, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVER
         })
         chunk_index += 1
 
-     
         if end == len(lines):
             break
 
     return chunks
-
 
 def chunk_python_by_functions(file_path, content):
     """
@@ -69,7 +60,7 @@ def chunk_python_by_functions(file_path, content):
 
     Falls back to line chunking if the file can't be parsed.
     """
-   
+
 
     try:
         tree = ast.parse(content)
@@ -81,7 +72,7 @@ def chunk_python_by_functions(file_path, content):
     chunks = []
     chunk_index = 0
 
-    
+
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             start = node.lineno - 1     
@@ -90,7 +81,6 @@ def chunk_python_by_functions(file_path, content):
             chunk_lines = lines[start:end]
             chunk_content = "\n".join(chunk_lines)
 
-            
             if len(chunk_lines) > CHUNK_SIZE * 2:
                 sub_chunks = chunk_by_lines(file_path, chunk_content, CHUNK_SIZE, CHUNK_OVERLAP)
                 for sc in sub_chunks:
@@ -119,13 +109,11 @@ def chunk_python_by_functions(file_path, content):
                     "name":        node.name   
                 })
                 chunk_index += 1
-
     
     if not chunks:
         return chunk_by_lines(file_path, content)
 
     return chunks
-
 
 def chunk_file(file_dict):
     """
@@ -141,14 +129,11 @@ def chunk_file(file_dict):
     """
     path = file_dict["path"]
     content = file_dict["content"]
-
     
     if path.endswith(".py"):
         return chunk_python_by_functions(path, content)
-
     
     return chunk_by_lines(path, content)
-
 
 def chunk_all(files):
     """
@@ -165,7 +150,6 @@ def chunk_all(files):
 
     return all_chunks
 
-
 def print_chunk_summary(chunks):
     """Print a readable summary of the chunks."""
     print("\n" + "=" * 50)
@@ -173,7 +157,6 @@ def print_chunk_summary(chunks):
     print("=" * 50)
     print(f"  Total chunks: {len(chunks)}")
 
-    
     types = {}
     for c in chunks:
         t = c.get("type", "unknown")
@@ -193,8 +176,6 @@ def print_chunk_summary(chunks):
 
     print("=" * 50)
 
-
-
 if __name__ == "__main__":
     
     from ingest import ingest
@@ -203,14 +184,11 @@ if __name__ == "__main__":
     if not url:
         url = "https://github.com/realpython/reader"
         print(f"Using default: {url}")
-
     
     print("\nIngesting...")
     files = ingest(url)
-
     
     print("\nChunking...")
     chunks = chunk_all(files)
 
-    
     print_chunk_summary(chunks)
