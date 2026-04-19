@@ -1,23 +1,3 @@
-# =============================================================
-# GitWhisper — api.py
-# FastAPI backend — exposes GitWhisper as HTTP endpoints
-# =============================================================
-#
-# CONCEPT: Why FastAPI?
-# ---------------------------------------------------------------
-# Right now GitWhisper only works in the terminal.
-# FastAPI wraps our logic in HTTP endpoints so that:
-#   - A frontend (React, Next.js) can call it
-#   - Any tool or app can use it via REST API
-#   - We can deploy it to the cloud
-#
-# Endpoints we'll build:
-#   POST /ingest        → ingest a GitHub repo
-#   POST /chat          → ask a question, get streamed answer
-#   GET  /repo/status   → check if a repo is already ingested
-#   GET  /health        → check if server is running
-# =============================================================
-
 import os
 import json
 from fastapi import FastAPI, HTTPException
@@ -40,27 +20,12 @@ if not GROQ_API_KEY:
 
 client = Groq(api_key=GROQ_API_KEY)
 
-# ---------------------------------------------------------------
-# CONCEPT: FastAPI app
-# ---------------------------------------------------------------
-# This one line creates the entire web application.
-# metadata is shown in the auto-generated docs at /docs
 app = FastAPI(
     title="GitWhisper API",
     description="Chat with any GitHub repository using RAG",
     version="1.0.0"
 )
 
-# ---------------------------------------------------------------
-# CONCEPT: CORS (Cross-Origin Resource Sharing)
-# ---------------------------------------------------------------
-# By default browsers block requests from one domain to another.
-# For example: your frontend on vercel.com calling your backend
-# on render.com would be blocked.
-#
-# CORS middleware tells the browser: "yes, this is allowed."
-# allow_origins=["*"] means any frontend can call our API.
-# In production you'd restrict this to your frontend's domain.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -69,35 +34,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---------------------------------------------------------------
-# CONCEPT: Pydantic models
-# ---------------------------------------------------------------
-# These define the shape of data coming IN to our endpoints.
-# FastAPI uses them to:
-#   1. Validate incoming requests automatically
-#   2. Show in the docs what each endpoint expects
-#   3. Give us type hints so our editor helps us
 
 class IngestRequest(BaseModel):
-    github_url: str         # e.g. "https://github.com/owner/repo"
+    github_url: str         
 
 class ChatRequest(BaseModel):
-    github_url: str         # which repo to chat with
-    message: str            # the user's question
-    history: list = []      # conversation history so far
+    github_url: str         
+    message: str            
+    history: list = []      
 
-# ---------------------------------------------------------------
-# In-memory session store
-# ---------------------------------------------------------------
-# Tracks which repos have been ingested so we don't
-# re-ingest on every chat message.
-# Key: "owner/repo", Value: True
 ingested_repos: dict = {}
-
-
-# =============================================================
-# ENDPOINTS
-# =============================================================
 
 @app.get("/health")
 def health():
@@ -127,7 +73,6 @@ def repo_status(github_url: str):
     repo_key = f"{owner}/{repo}"
     collection_name = get_collection_name(owner, repo)
 
-    # Check if collection exists in ChromaDB
     try:
         collection = chroma_client.get_collection(collection_name)
         count = collection.count()
@@ -172,7 +117,6 @@ def ingest_repo(request: IngestRequest):
 
     repo_key = f"{owner}/{repo}"
 
-    # Check if already ingested — skip if so
     collection_name = get_collection_name(owner, repo)
     try:
         collection = chroma_client.get_collection(collection_name)
@@ -184,17 +128,13 @@ def ingest_repo(request: IngestRequest):
                 "message": "Repo already ingested. Ready to chat."
             }
     except Exception:
-        pass  # collection doesn't exist yet, proceed with ingestion
+        pass  
 
-    # Run the full pipeline
     try:
-        # 1. Fetch files from GitHub
         files = ingest(request.github_url)
 
-        # 2. Chunk files
         chunks = chunk_all(files)
 
-        # 3. Embed and store
         embed_chunks(chunks, owner, repo)
 
         ingested_repos[repo_key] = True
@@ -275,10 +215,9 @@ def chat(request: ChatRequest):
         each yielded value to the client immediately.
         """
         try:
-            # 1. Search for relevant chunks
+            
             chunks = search(request.message, owner, repo, top_k=5)
 
-            # Send sources to frontend first
             sources = [
                 {
                     "path":       c["path"],
@@ -291,21 +230,17 @@ def chat(request: ChatRequest):
             ]
             yield f"data: {json.dumps({'sources': sources})}\n\n"
 
-            # 2. Build context from chunks
             context = build_context_string(chunks)
 
-            # 3. Build system prompt with context
             system_prompt = RAG_SYSTEM_PROMPT.format(repo=f"{owner}/{repo}")
             system_prompt += f"\n\nRELEVANT CODE CONTEXT:\n\n{context}"
 
-            # 4. Build messages with history
             messages = [
                 {"role": "system", "content": system_prompt},
                 *request.history,
                 {"role": "user", "content": request.message}
             ]
 
-            # 5. Stream from Groq
             stream = client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
                 messages=messages,
@@ -314,13 +249,11 @@ def chat(request: ChatRequest):
                 stream=True
             )
 
-            # 6. Yield each token as an SSE event
             for chunk in stream:
                 delta = chunk.choices[0].delta.content
                 if delta:
                     yield f"data: {json.dumps({'token': delta})}\n\n"
 
-            # 7. Send done signal
             yield f"data: {json.dumps({'done': True})}\n\n"
 
         except Exception as e:
