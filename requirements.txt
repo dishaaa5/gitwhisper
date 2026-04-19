@@ -3,3 +3,6 @@ python-dotenv
 requests
 sentence-transformers
 chromadb
+fastapi
+uvicorn
+pydantic
