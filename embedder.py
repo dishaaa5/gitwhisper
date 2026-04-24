@@ -3,7 +3,7 @@ from fastembed import TextEmbedding
 import hashlib
 import os
 
-
+#switch to fastembed
 print("Loading embedding model...")
 embedding_model = TextEmbedding("BAAI/bge-small-en-v1.5")
 print("Embedding model ready.")
