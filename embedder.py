@@ -6,10 +6,10 @@ import time
 from dotenv import load_dotenv
 
 load_dotenv()
-
+## HF failing
 
 HF_TOKEN = os.getenv("HF_TOKEN")
-HF_API_URL = "https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/all-MiniLM-L6-v2"
+HF_API_URL = "https://api-inference.huggingface.co/models/sentence-transformers/all-MiniLM-L6-v2"
 
 if not HF_TOKEN:
     print("WARNING: HF_TOKEN not found in .env")
@@ -36,7 +36,7 @@ def get_embeddings(texts: list) -> list:
     response = requests.post(
         HF_API_URL,
         headers=headers,
-        json={"inputs": texts}
+        json={"inputs": texts, "options": {"wait_for_model": True}}
     )
 
     if response.status_code == 503:
