@@ -1,58 +1,29 @@
+# =============================================================
+# GitWhisper — embedder.py
+# Convert chunks into vectors and store in ChromaDB
+# Uses ChromaDB's built-in embeddings — no extra libraries needed
+# =============================================================
+
 import chromadb
 import hashlib
 import os
-import requests
-import time
-from dotenv import load_dotenv
 
-load_dotenv()
-## HF failing
-
-HF_TOKEN = os.getenv("HF_TOKEN")
-HF_API_URL = "https://api-inference.huggingface.co/models/sentence-transformers/all-MiniLM-L6-v2"
-
-if not HF_TOKEN:
-    print("WARNING: HF_TOKEN not found in .env")
-    print("Get a free token at huggingface.co -> Settings -> Access Tokens")
+# ---------------------------------------------------------------
+# CONCEPT: ChromaDB default embeddings
+# ---------------------------------------------------------------
+# ChromaDB has a built-in embedding function that uses
+# "all-MiniLM-L6-v2" under the hood via its own lightweight
+# implementation. We don't need sentence-transformers or
+# any HuggingFace API — ChromaDB handles it all internally.
+#
+# This means:
+#   - No separate embedding library needed
+#   - Model is tiny and loads fast (~45MB)
+#   - Works offline, completely free
+#   - Same quality as sentence-transformers
 
 CHROMA_DIR = "chroma_db"
 chroma_client = chromadb.PersistentClient(path=CHROMA_DIR)
-
-
-def get_embeddings(texts: list) -> list:
-    """
-    Call HuggingFace Inference API to get embeddings for a list of texts.
-
-    CONCEPT: API-based embeddings
-    ---------------------------------------------------------------
-    Instead of loading a model into RAM, we send texts to HF's
-    servers and get back vectors. Same result, zero local memory.
-
-    The API expects:  {"inputs": ["text1", "text2", ...]}
-    And returns:      [[0.1, 0.2, ...], [0.3, 0.4, ...]]
-    """
-    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
-
-    response = requests.post(
-        HF_API_URL,
-        headers=headers,
-        json={"inputs": texts, "options": {"wait_for_model": True}}
-    )
-
-    if response.status_code == 503:
-        wait_time = response.json().get("estimated_time", 20)
-        print(f"  HF model loading, waiting {wait_time:.0f}s...")
-        time.sleep(min(wait_time, 30))
-        response = requests.post(
-            HF_API_URL,
-            headers=headers,
-            json={"inputs": texts}
-        )
-
-    if response.status_code != 200:
-        raise ValueError(f"HuggingFace API error {response.status_code}: {response.text}")
-
-    return response.json()
 
 
 def get_collection_name(owner, repo):
@@ -63,33 +34,37 @@ def get_collection_name(owner, repo):
 def embed_chunks(chunks, owner, repo):
     """
     Embed all chunks and store in ChromaDB.
+    ChromaDB handles embeddings automatically.
     Only runs once per repo — results persist to disk.
     """
     collection_name = get_collection_name(owner, repo)
 
+    # ---------------------------------------------------------------
+    # CONCEPT: Default embedding function
+    # ---------------------------------------------------------------
+    # By NOT passing an embedding_function, ChromaDB uses its
+    # default: "all-MiniLM-L6-v2" via chromadb.utils.embedding_functions
+    # It downloads the model once and caches it locally.
     collection = chroma_client.get_or_create_collection(
         name=collection_name,
         metadata={"owner": owner, "repo": repo}
     )
 
+    # Skip if already embedded
     existing_count = collection.count()
     if existing_count > 0:
         print(f"Already embedded ({existing_count} chunks). Skipping.")
         return collection
 
-    print(f"Embedding {len(chunks)} chunks via HuggingFace API...")
+    print(f"Embedding {len(chunks)} chunks...")
+    print("(Downloading embedding model on first run — one time only)")
 
-    batch_size = 16
+    # Process in batches
+    batch_size = 32
 
     for i in range(0, len(chunks), batch_size):
         batch = chunks[i: i + batch_size]
         texts = [chunk["content"] for chunk in batch]
-
-        try:
-            embeddings = get_embeddings(texts)
-        except Exception as e:
-            print(f"  Error on batch {i}: {e}")
-            continue
 
         ids = []
         metadatas = []
@@ -106,9 +81,9 @@ def embed_chunks(chunks, owner, repo):
                 "name":       chunk.get("name", ""),
             })
 
+        # ChromaDB embeds the documents automatically
         collection.add(
             ids=ids,
-            embeddings=embeddings,
             documents=texts,
             metadatas=metadatas
         )
@@ -122,7 +97,8 @@ def embed_chunks(chunks, owner, repo):
 
 def search(query, owner, repo, top_k=5):
     """
-    Find the most relevant chunks for a query using semantic search.
+    Find the most relevant chunks for a query.
+    ChromaDB embeds the query automatically using the same model.
     """
     collection_name = get_collection_name(owner, repo)
 
@@ -131,10 +107,9 @@ def search(query, owner, repo, top_k=5):
     except Exception:
         raise ValueError("Repo not embedded yet. Call embed_chunks() first.")
 
-    query_embedding = get_embeddings([query])[0]
-
+    # ChromaDB embeds the query text automatically
     results = collection.query(
-        query_embeddings=[query_embedding],
+        query_texts=[query],
         n_results=top_k,
         include=["documents", "metadatas", "distances"]
     )
